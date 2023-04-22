@@ -1,0 +1,10 @@
+path=example/
+file-extension=png
+maximum-distance=90
+include-owner
+exclude-water
+subregions
+regions
+no-continents
+no-numbering
+use-hex
