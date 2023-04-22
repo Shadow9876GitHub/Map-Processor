@@ -23,5 +23,5 @@ There's also an example next to the program so feel free to experiment with that
 - If you are on Linux try the prebuilt libraries and if that doesn't work, well... there are a dozen of tutorials which may or may not work, good luck regardless!
 
 ## Efficiency
-- This project is not optimised for memory... so please don't run a 16000x5600 image with 5000 provinces in it because it won't work
+- This project is not optimised for memory... so please don't run a 16000x5600 image with 5000 provinces because it won't work
 - I know it stores too many images, but I don't have a better idea as of yet
