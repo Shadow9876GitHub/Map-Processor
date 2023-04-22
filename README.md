@@ -1,6 +1,6 @@
 # Map-Processor v1.0
 ![asdf](https://user-images.githubusercontent.com/125653767/233795295-60679642-a980-4f1f-8e0a-cf8c7abeac65.jpeg)
-A console application that calculates province positions and their neighbours
+>A console application that calculates province positions and their neighbours
 
 
 This is a simple console application that calculates provinces' positions, and their neighbours based on an appropriate input image.
