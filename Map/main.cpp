@@ -15,17 +15,26 @@ class Province
 public:
     string colour;
     Point pos;
-    Mat shape;
+    vector<uchar> shape;
     vector<int> neighbours;
     string subregion;
     string region;
     string continent;
+    Rect box;
     Province(string colour, Point pos)
     {
         this->colour=colour;
         this->pos=pos;
     }
 };
+
+void showImage(Mat image, string window_name="image")
+{
+    namedWindow(window_name, WINDOW_AUTOSIZE);
+    imshow(window_name, image);
+    waitKey(0);
+    destroyAllWindows();
+}
 
 string bgr_to_hex(Vec3b colour)
 {
@@ -39,11 +48,28 @@ string bgr_to_hex(Vec3b colour)
     return hexa;
 }
 
-bool overlap(Mat im1, Mat im2)
+bool overlap(vector<uchar> c1, Rect b1, vector<uchar> c2, Rect b2)
 {
+    Mat im1,im2;
+    im1=imdecode(c1,IMREAD_GRAYSCALE );
+    im2=imdecode(c2,IMREAD_GRAYSCALE );
     Mat shape;
-    bitwise_and(im1,im2,shape);
+    Mat im3, im4;
+    int x,y,w,h;
+    x=min(b1.x,b2.x);y=min(b1.y,b2.y);w=max(b1.x+b1.width,b2.x+b2.width);h=max(b1.y+b1.height,b2.y+b2.height);
+    copyMakeBorder(im1, im3, b1.y-y, h-b1.y-b1.height, b1.x-x, w-b1.x-b1.width, BORDER_CONSTANT, Scalar(0));
+    copyMakeBorder(im2, im4, b2.y-y, h-b2.y-b2.height, b2.x-x, w-b2.x-b2.width, BORDER_CONSTANT, Scalar(0));
+    bitwise_and(im3,im4,shape);
     return countNonZero(shape)>0;
+}
+
+bool do_intersect(Rect a, Rect b)
+{
+    if (a.x>b.x+b.width || b.x>a.x+a.width || a.y>b.y+b.height || b.y>a.y+a.height)
+    {
+        return false;
+    }
+    return true;
 }
 
 Point firstNonZero(Mat img,Point start=Point(0,0))
@@ -104,7 +130,6 @@ int main(int argc, char* argv[])
             cout<<"\t-v/--verbose\t\t\tWhether to give a detailed output where the program is currently"<<endl<<endl;
             cout<<"\t--path=<PATH>\t\t\tBasically where your maps are"<<endl<<endl;
             cout<<"\t--file-extension=<EXTENSION>\tWhat file extension they use (eg. .png, .jpg or nothing at all)"<<endl<<endl;
-            cout<<"\t--maximum-distance=<INTEGER>\tMaximum distance of provinces (to check neighbours)"<<endl<<endl;
             cout<<"\t--<include/exclude>-owner\tWhether to output the colours of the provinces' owners"<<endl<<endl;
             cout<<"\t--<include/exclude>-water\tWhether to calculate the neighbours of waters (water colour will be the first\n\t\t\t\t\tpixel of the upper left corner)"<<endl<<endl;
             cout<<"\t--<subregions/no-subregions>\tWhether to include subregions in the output or not"<<endl<<endl;
@@ -118,10 +143,10 @@ int main(int argc, char* argv[])
         }
     }
     //Setup flags
-    bool flags[7];
+    bool flags[7]={false,false,false,false,false,false,false};
     string FLAGS[7]={"owner","water","regions","subregions","continents","numbering","verbose"};
     string path,file_extension;
-    int use=-1,maximum_distance=1000;
+    int use=-1;
     string USE[4]={"hex","rgb"};
 
     string line;
@@ -149,10 +174,6 @@ int main(int argc, char* argv[])
         else if (spl[0]=="file-extension")
         {
             file_extension=spl[1];
-        }
-        else if (spl[0]=="maximum-distance")
-        {
-            maximum_distance=stoi(spl[1]);
         }
         else
         {
@@ -223,14 +244,28 @@ int main(int argc, char* argv[])
 
         provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos));
 
+        vector<int> param(2);
+        param[0]=IMWRITE_JPEG_QUALITY;
+        param[1]=89;
+
         //If province is not water get its shape
         if (flags[1] || provinces[provinces.size()-1].colour!=provinces[0].colour)
         {
             floodFill(thresh, pos, Scalar(1));
-            Mat shape;
-            inRange(thresh, Scalar(1), Scalar(1), shape);
-            dilate(shape,shape,Mat());
-            provinces[provinces.size()-1].shape=shape;
+            Mat range,shape, cropped;
+            inRange(thresh, Scalar(1), Scalar(1), range);
+            dilate(range,shape,Mat());
+            range.release();
+            Rect box=boundingRect(shape);
+            //cout<<box.x<<" "<<box.y<<" "<<box.x+box.width<<" "<<box.y+box.height<<" "<<endl;
+            cropped=shape(Range(box.y,box.y+box.height),Range(box.x,box.x+box.width));
+            shape.release();
+            //provinces[provinces.size()-1].shape=cropped;
+            vector<uchar> buff;
+            cv::imencode(".jpg", cropped, buff, param); //Compressing image in memory
+            provinces[provinces.size()-1].shape=buff;
+            provinces[provinces.size()-1].box=box;
+            cropped.release();
         }
         floodFill(thresh, pos, Scalar(0));
         if (flags[6]) cout<<"\rProcessing provinces ("<<provinces.size()<<")";
@@ -242,19 +277,28 @@ int main(int argc, char* argv[])
     if (flags[6]) cout<<"\rFinding neighbours...        "<<endl;
     //Adding neighbours
     int SIZE=provinces.size();
-    char neighbours[SIZE][SIZE]={};
+    //char neighbours[SIZE][SIZE]={};
+    char **neighbours = new char*[SIZE];
+    for(int i=0;i<SIZE;++i)
+    {
+        neighbours[i]=new char[SIZE]{0};
+    }
 
     for (int i=SIZE-1;i>=0;--i)
     {
-        //Only going with j until we reach the diagonal
-        for (int j=0;j<i;++j)
+        if (flags[1] || provinces[i].colour!=provinces[0].colour)
         {
-            if (norm(provinces[i].pos-provinces[j].pos)<=maximum_distance && (flags[1] || provinces[j].colour!=provinces[0].colour) && overlap(provinces[i].shape,provinces[j].shape))
+            //Only going with j until we reach the diagonal
+            for (int j=0;j<i;++j)
             {
-                ++neighbours[i][j];
-                ++neighbours[j][i];
+                if (do_intersect(provinces[i].box, provinces[j].box) && (flags[1] || provinces[j].colour!=provinces[0].colour) && overlap(provinces[i].shape,provinces[i].box,provinces[j].shape,provinces[j].box))
+                {
+                    ++neighbours[i][j];
+                    ++neighbours[j][i];
+                }
             }
         }
+
         if (flags[6]) cout<<"\r"<<SIZE-i<<"/"<<SIZE<<" province done";
     }
     if (flags[6]) cout<<"\rAssigning found neighbours..."<<endl;
@@ -270,10 +314,16 @@ int main(int argc, char* argv[])
         }
     }
 
-    for (int i=0;i<SIZE;i++)
+    for(int i=0;i<SIZE;++i)
+    {
+        delete [] neighbours[i];
+    }
+    delete [] neighbours;
+
+    /*for (int i=0;i<SIZE;i++)
     {
         provinces[i].shape.release();
-    }
+    }*/
 
     if (flags[6]) cout<<"Finding subregions, regions and continents..."<<endl;
     //Finding regions, subregions and continents
