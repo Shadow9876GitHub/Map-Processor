@@ -9,7 +9,7 @@ You can use the application from a console (called Command Prompt on Windows or 
 
 Command.
 The application also includes automatic flags (in default_flags.txt) which can be changed for faster input.
-There's also an example next to the program so feel free to experiment with that.
+There are also two examples next to the program so feel free to experiment with those.
 
 Now it's working properly with bigger images such as 5000x3000 ones or even 12000x5000 sized images (though it takes a long time).
 
