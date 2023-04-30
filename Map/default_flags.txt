@@ -1,9 +1,10 @@
 path=example/
 file-extension=png
+water-colour=#97DBF2
 include-owner
 exclude-water
-no-subregions
-no-regions
+subregions
+regions
 no-continents
 no-numbering
 use-hex

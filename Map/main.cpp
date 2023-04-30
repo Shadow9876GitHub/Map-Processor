@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <time.h>
 
 using namespace cv;
 using namespace std;
@@ -113,11 +114,12 @@ vector<string> custom_split(string str, char del)
 
 int main(int argc, char* argv[])
 {
+    clock_t Start=clock();
     //Help
     if (argc>1)
     {
         string help=argv[1];
-        if (help=="--help" || help=="-help" || help=="-h")
+        if (help=="--help" || help=="-help" || help=="-h" || help=="help" || help=="h")
         {
             cout<<endl;
             cout<<endl;
@@ -130,6 +132,7 @@ int main(int argc, char* argv[])
             cout<<"\t-v/--verbose\t\t\tWhether to give a detailed output where the program is currently"<<endl<<endl;
             cout<<"\t--path=<PATH>\t\t\tBasically where your maps are"<<endl<<endl;
             cout<<"\t--file-extension=<EXTENSION>\tWhat file extension they use (eg. .png, .jpg or nothing at all)"<<endl<<endl;
+            cout<<"\t--water-colour=<HEX>\t\tThe water colour in hex, if nothing is given it defaults to the colour at\n\t\t\t\t\tthe top left corner of the image"<<endl<<endl;
             cout<<"\t--<include/exclude>-owner\tWhether to output the colours of the provinces' owners"<<endl<<endl;
             cout<<"\t--<include/exclude>-water\tWhether to calculate the neighbours of waters (water colour will be the first\n\t\t\t\t\tpixel of the upper left corner)"<<endl<<endl;
             cout<<"\t--<subregions/no-subregions>\tWhether to include subregions in the output or not"<<endl<<endl;
@@ -147,7 +150,8 @@ int main(int argc, char* argv[])
     string FLAGS[7]={"owner","water","regions","subregions","continents","numbering","verbose"};
     string path,file_extension;
     int use=-1;
-    string USE[4]={"hex","rgb"};
+    string USE[2]={"hex","rgb"};
+    string water_colour;
 
     string line;
     vector<string> spl;
@@ -174,6 +178,10 @@ int main(int argc, char* argv[])
         else if (spl[0]=="file-extension")
         {
             file_extension=spl[1];
+        }
+        else if (spl[0]=="water-colour" || spl[0]=="water-color")
+        {
+            water_colour=spl[1];
         }
         else
         {
@@ -217,116 +225,11 @@ int main(int argc, char* argv[])
         cout<<"Error: Could not read the image `"+path+"map."+file_extension+"`!"<<endl;
         return 1;
     }
-    if (flags[6]) cout<<"Preparing greyscale images..."<<endl;
-    //Making greyscale image
-    Mat greyImage;
-    cvtColor(img, greyImage, COLOR_BGR2GRAY);
-    //Making black and white image
-    Mat thresh;
-    threshold(greyImage,thresh,0,255,THRESH_BINARY);
-
-    greyImage.release();
-
-    vector<Province> provinces;
-
-    if (flags[6]) cout<<"Getting basic information..."<<endl;
-    //Getting basic information of the map (position and colour)
-    Point pos;
-    Point start=Point(0,0);
-    while (true)
+    if (water_colour.empty())
     {
-        pos=firstNonZero(thresh,start);
-        if (pos.x<0 || pos.y<0)
-        {
-            break;
-        }
-        start=pos;
-
-        provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos));
-
-        vector<int> param(2);
-        param[0]=IMWRITE_JPEG_QUALITY;
-        param[1]=89;
-
-        //If province is not water get its shape
-        if (flags[1] || provinces[provinces.size()-1].colour!=provinces[0].colour)
-        {
-            floodFill(thresh, pos, Scalar(1));
-            Mat range,shape, cropped;
-            inRange(thresh, Scalar(1), Scalar(1), range);
-            dilate(range,shape,Mat());
-            range.release();
-            Rect box=boundingRect(shape);
-            //cout<<box.x<<" "<<box.y<<" "<<box.x+box.width<<" "<<box.y+box.height<<" "<<endl;
-            cropped=shape(Range(box.y,box.y+box.height),Range(box.x,box.x+box.width));
-            shape.release();
-            //provinces[provinces.size()-1].shape=cropped;
-            vector<uchar> buff;
-            cv::imencode(".jpg", cropped, buff, param); //Compressing image in memory
-            provinces[provinces.size()-1].shape=buff;
-            provinces[provinces.size()-1].box=box;
-            cropped.release();
-        }
-        floodFill(thresh, pos, Scalar(0));
-        if (flags[6]) cout<<"\rProcessing provinces ("<<provinces.size()<<")";
+        water_colour=bgr_to_hex(img.at<Vec3b>(Point(0,0)));
     }
-
-    thresh.release();
-    img.release();
-
-    if (flags[6]) cout<<"\rFinding neighbours...        "<<endl;
-    //Adding neighbours
-    int SIZE=provinces.size();
-    //char neighbours[SIZE][SIZE]={};
-    char **neighbours = new char*[SIZE];
-    for(int i=0;i<SIZE;++i)
-    {
-        neighbours[i]=new char[SIZE]{0};
-    }
-
-    for (int i=SIZE-1;i>=0;--i)
-    {
-        if (flags[1] || provinces[i].colour!=provinces[0].colour)
-        {
-            //Only going with j until we reach the diagonal
-            for (int j=0;j<i;++j)
-            {
-                if (do_intersect(provinces[i].box, provinces[j].box) && (flags[1] || provinces[j].colour!=provinces[0].colour) && overlap(provinces[i].shape,provinces[i].box,provinces[j].shape,provinces[j].box))
-                {
-                    ++neighbours[i][j];
-                    ++neighbours[j][i];
-                }
-            }
-        }
-
-        if (flags[6]) cout<<"\r"<<SIZE-i<<"/"<<SIZE<<" province done";
-    }
-    if (flags[6]) cout<<"\rAssigning found neighbours..."<<endl;
-    //Assigning neighbours based on the "graph"
-    for (int i=0;i<SIZE;++i)
-    {
-        for (int j=0;j<SIZE;++j)
-        {
-            if (neighbours[i][j]==1)
-            {
-                provinces[i].neighbours.push_back(j);
-            }
-        }
-    }
-
-    for(int i=0;i<SIZE;++i)
-    {
-        delete [] neighbours[i];
-    }
-    delete [] neighbours;
-
-    /*for (int i=0;i<SIZE;i++)
-    {
-        provinces[i].shape.release();
-    }*/
-
-    if (flags[6]) cout<<"Finding subregions, regions and continents..."<<endl;
-    //Finding regions, subregions and continents
+    //Not even starting if regions, subregions or continents are missing if appropriate flags are set
     Mat reg,sub,cont;
     if (flags[2])
     {
@@ -355,6 +258,115 @@ int main(int argc, char* argv[])
             return 4;
         }
     }
+    if (flags[6]) cout<<"Preparing greyscale images..."<<endl;
+    //Making greyscale image
+    Mat greyImage;
+    cvtColor(img, greyImage, COLOR_BGR2GRAY);
+    //Making black and white image
+    Mat thresh;
+    threshold(greyImage,thresh,0,255,THRESH_BINARY);
+
+    greyImage.release();
+
+    vector<Province> provinces;
+
+    if (flags[6]) cout<<"Getting basic information..."<<endl;
+    //Getting basic information of the map (position and colour)
+    Point pos;
+    Point start=Point(0,0);
+    while (true)
+    {
+        pos=firstNonZero(thresh,start);
+        if (pos.x<0 || pos.y<0)
+        {
+            break;
+        }
+        start=pos;
+
+        provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos));
+
+        Mat range, shape, cropped;
+        vector<uchar> buff;
+
+        vector<int> param(2);
+        param[0]=IMWRITE_JPEG_QUALITY;
+        param[1]=89;
+        Rect box;
+        Rect rect;
+
+        //If province is not water get its shape
+        if (flags[1] || provinces[provinces.size()-1].colour!=water_colour)
+        {
+            floodFill(thresh, pos, Scalar(1), &rect, Scalar(0), Scalar(0), 8);
+
+            inRange(thresh, Scalar(1), Scalar(1), range);
+            dilate(range,shape,Mat());
+
+            box=boundingRect(shape);
+
+            cropped=shape(Range(box.y,box.y+box.height),Range(box.x,box.x+box.width));
+
+            imencode(".jpg", cropped, buff, param); //Compressing image in memory
+
+            provinces[provinces.size()-1].shape=buff;
+            provinces[provinces.size()-1].box=box;
+        }
+        floodFill(thresh, pos, Scalar(0), &rect, Scalar(0), Scalar(0), 8);
+        if (flags[6]) cout<<"\rProcessing provinces ("<<provinces.size()<<")";
+    }
+
+    thresh.release();
+    img.release();
+
+    if (flags[6]) cout<<"\r"<<provinces.size()<<" provinces processed...        "<<endl;
+
+    if (flags[6]) cout<<"Finding neighbours..."<<endl;
+    //Adding neighbours
+    int SIZE=provinces.size();
+    bool **neighbours = new bool*[SIZE];
+    for(int i=0;i<SIZE;++i)
+    {
+        neighbours[i]=new bool[SIZE]{false};
+    }
+
+    for (int i=SIZE-1;i>=0;--i)
+    {
+        if (flags[1] || provinces[i].colour!=water_colour)
+        {
+            //Only going with j until we reach the diagonal
+            for (int j=0;j<i;++j)
+            {
+                if (do_intersect(provinces[i].box, provinces[j].box) && (flags[1] || provinces[j].colour!=water_colour) && overlap(provinces[i].shape,provinces[i].box,provinces[j].shape,provinces[j].box))
+                {
+                    neighbours[i][j]=true;
+                    neighbours[j][i]=true;
+                }
+            }
+        }
+
+        if (flags[6]) cout<<"\r"<<SIZE-i<<"/"<<SIZE<<" province done";
+    }
+    if (flags[6]) cout<<"\rAssigning found neighbours..."<<endl;
+    //Assigning neighbours based on the "graph"
+    for (int i=0;i<SIZE;++i)
+    {
+        for (int j=0;j<SIZE;++j)
+        {
+            if (neighbours[i][j])
+            {
+                provinces[i].neighbours.push_back(j);
+            }
+        }
+    }
+
+    for(int i=0;i<SIZE;++i)
+    {
+        delete [] neighbours[i];
+    }
+    delete [] neighbours;
+
+    if (flags[6]) cout<<"Finding subregions, regions and continents..."<<endl;
+    //Finding regions, subregions and continents
     for (int i=0;i<SIZE;i++)
     {
         if (flags[2]) provinces[i].region=bgr_to_hex(reg.at<Vec3b>(provinces[i].pos));
@@ -418,6 +430,11 @@ int main(int argc, char* argv[])
             out<<provinces[i].neighbours[j]<<" ";
         }
         out<<"\n";
+    }
+
+    if (flags[6])
+    {
+        cout<<endl<<"Execution time: "<<(double)(clock()-Start)/CLOCKS_PER_SEC<<endl;
     }
 
     return 0;
