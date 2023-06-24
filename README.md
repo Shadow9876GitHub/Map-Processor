@@ -1,6 +1,8 @@
-# Map-Processor v1.2
+# Map-Processor v1.2 Legacy
 ![asdf3](https://github.com/Shadow9876GitHub/Map-Processor/assets/125653767/976a248f-4901-4445-b51a-7efe23b0db09)
 >A console application that calculates province positions and their neighbours
+
+This is a variation of the Map Processor "software" namely it doesn't have multiprocessing in it. It is designed for lower-end computers and for single threading enthusiast.
 
 This is a simple console application that calculates provinces' positions, and their neighbours based on an appropriate input image.
 You can use the application from a console (called Command Prompt on Windows or Terminal on Linux). The program uses flags which can be accessed after a quick
