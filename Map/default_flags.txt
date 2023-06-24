@@ -1,10 +1,9 @@
 path=example/
 file-extension=png
 water-colour=#97DBF2
-include-owner
-exclude-water
+owner
 subregions
 regions
-no-continents
-no-numbering
+continents
 use-hex
+cores=6

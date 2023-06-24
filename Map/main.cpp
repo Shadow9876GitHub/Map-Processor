@@ -7,25 +7,57 @@
 #include <string>
 #include <fstream>
 #include <time.h>
+#include <thread>
+#include <mutex>
 
 using namespace cv;
 using namespace std;
 
+#define F_SIZE 10
+
+//Mutex
+mutex m;
+
+//Setup flags
+bool flags[F_SIZE]={true,false,false,false,false,false,false,false,false,true};
+string FLAGS[F_SIZE]={"owner","water","regions","subregions","continents","numbering","verbose","countries","empires","headers"};
+string path, file_extension="png";
+int use=0;
+int cores=6;
+string USE[2]={"hex","rgb"};
+string water_colour;
+
 class Province
 {
 public:
+    int index;
     string colour;
     Point pos;
     vector<uchar> shape;
     vector<int> neighbours;
     string subregion;
     string region;
+    string country;
+    string empire;
     string continent;
     Rect box;
-    Province(string colour, Point pos)
+    Province(int index, string colour, Point posm, Rect box)
     {
+        this->index=index;
         this->colour=colour;
         this->pos=pos;
+        this->box=box;
+    }
+    Province(int index, string colour, Point pos, vector<uchar> shape, Rect box)
+    {
+        this->index=index;
+        this->colour=colour;
+        this->pos=pos;
+        this->shape=shape;
+        this->box=box;
+    }
+    bool operator< (const Province &other) const {
+        return index < other.index;
     }
 };
 
@@ -82,7 +114,7 @@ Point firstNonZero(Mat img,Point start=Point(0,0))
         const uchar* ptr8=img.ptr(i);
         for(int j=0;j<cols;j++)
         {
-            if(ptr8[j]!=0)
+            if(ptr8[j]==255)
             {
                 return Point(j,i);
             }
@@ -111,6 +143,40 @@ vector<string> custom_split(string str, char del)
     return res;
 }
 
+void get_province(int index, Mat img, Point pos, vector<Province> &provinces, Mat thresh, int thread_num)
+{
+    Mat range, shape, cropped;
+    vector<uchar> buff;
+
+    vector<int> param(2);
+    param[0]=IMWRITE_JPEG_QUALITY;
+    param[1]=89;
+    Rect box;
+    Rect rect;
+
+    inRange(thresh, Scalar(thread_num), Scalar(thread_num), range);
+    dilate(range,shape,Mat());
+
+    box=boundingRect(shape);
+
+    //If province is not water get its shape
+    if (flags[1] || bgr_to_hex(img.at<Vec3b>(pos))!=water_colour)
+    {
+        cropped=shape(Range(box.y,box.y+box.height),Range(box.x,box.x+box.width));
+
+        imencode(".jpg", cropped, buff, param); //Compressing image in memory
+        m.lock();
+        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,buff,box));
+        m.unlock();
+    }
+    else
+    {
+        m.lock();
+        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,box));
+        m.unlock();
+    }
+    floodFill(thresh, pos, Scalar(0), &rect, Scalar(0), Scalar(0), 8);
+}
 
 int main(int argc, char* argv[])
 {
@@ -121,11 +187,10 @@ int main(int argc, char* argv[])
         string help=argv[1];
         if (help=="--help" || help=="-help" || help=="-h" || help=="help" || help=="h")
         {
-            cout<<endl;
-            cout<<endl;
+            cout<<endl<<endl;
             cout<<"Description:"<<endl;
             cout<<"\tThis program interprets maps and calculates their provinces' connections\n\t(as well as subregions, regions and continents if necessary)."<<endl;
-            cout<<"\tIt outputs the provinces' owners (column 1), positions(column 2 and 3),\n\tsubregions (col 4), regions (col 5) and lastly their neighbours (all the rest)."<<endl;
+            cout<<"\tBy default it outputs the provinces' owners (column 1), positions(column 2 and 3),\n\tsubregions (col 4), regions (col 5) and lastly their neighbours (all the rest) but these can be changed."<<endl;
             cout<<"\tAlso it has a few default flags which can be configured in default_flags.txt."<<endl;
             cout<<endl;
             cout<<"Usage:"<<endl;
@@ -133,26 +198,22 @@ int main(int argc, char* argv[])
             cout<<"\t--path=<PATH>\t\t\tBasically where your maps are"<<endl<<endl;
             cout<<"\t--file-extension=<EXTENSION>\tWhat file extension they use (eg. .png, .jpg or nothing at all)"<<endl<<endl;
             cout<<"\t--water-colour=<HEX>\t\tThe water colour in hex, if nothing is given it defaults to the colour at\n\t\t\t\t\tthe top left corner of the image"<<endl<<endl;
-            cout<<"\t--<include/exclude>-owner\tWhether to output the colours of the provinces' owners"<<endl<<endl;
-            cout<<"\t--<include/exclude>-water\tWhether to calculate the neighbours of waters (water colour will be the first\n\t\t\t\t\tpixel of the upper left corner)"<<endl<<endl;
-            cout<<"\t--<subregions/no-subregions>\tWhether to include subregions in the output or not"<<endl<<endl;
-            cout<<"\t--<regions/no-regions>\t\tWhether to include regions in the output or not"<<endl<<endl;
-            cout<<"\t--<continents/no-continents>\tWhether to include continents in the output or not"<<endl<<endl;
-            cout<<"\t--<numbering/no-numbering>\tWhether to write province index into the output"<<endl<<endl;
-            cout<<"\t--use-<hex/rgb>\t\t\tThe colour format of the output";
-            cout<<endl;
-            cout<<endl;
+            cout<<"\t--owner\t\t\t\tWhether to output the colours of the provinces' owners"<<endl<<endl;
+            cout<<"\t--water\t\t\t\t\Whether to calculate the neighbours of waters (water colour will be the first\n\t\t\t\t\tpixel of the upper left corner)"<<endl<<endl;
+            cout<<"\t--subregions\t\t\tWhether to include subregions in the output or not"<<endl<<endl;
+            cout<<"\t--regions\t\t\tWhether to include regions in the output or not"<<endl<<endl;
+            cout<<"\t--countries\t\t\tWhether to include countries in the output or not"<<endl<<endl;
+            cout<<"\t--empires\t\t\tWhether to include empires in the output or not"<<endl<<endl;
+            cout<<"\t--continents\t\t\tWhether to include continents in the output or not"<<endl<<endl;
+            cout<<"\t--numbering\t\t\tWhether to write province index into the output"<<endl<<endl;
+            cout<<"\t--use-<hex/rgb>\t\t\tThe colour format of the output"<<endl<<endl;
+            cout<<"\t--cores=<VALUE>\t\t\tThe number of CPU cores the application should use"<<endl<<endl;
+            cout<<"\t--headers\t\t\tWhether to use headers to label the information (it's automatically on,\n\t\t\t\t\ttype no-headers if you don't want to use them)";
+            cout<<endl<<endl;
             return 0;
         }
     }
-    //Setup flags
-    bool flags[7]={false,false,false,false,false,false,false};
-    string FLAGS[7]={"owner","water","regions","subregions","continents","numbering","verbose"};
-    string path,file_extension;
-    int use=-1;
-    string USE[2]={"hex","rgb"};
-    string water_colour;
-
+    //Helper to flags
     string line;
     vector<string> spl;
 
@@ -183,6 +244,10 @@ int main(int argc, char* argv[])
         {
             water_colour=spl[1];
         }
+        else if (spl[0]=="cores")
+        {
+            cores=stoi(spl[1]);
+        }
         else
         {
             if (spl[0]=="path")
@@ -205,8 +270,9 @@ int main(int argc, char* argv[])
                 }
                 else
                 {
-                    for (int i=0;i<6;++i)
+                    for (int i=0;i<F_SIZE;++i)
                     {
+                        if (i==6) continue;
                         if (spl[1]==FLAGS[i] || spl[0]==FLAGS[i])
                         {
                             flags[i]=!(spl[0]=="no" || spl[0]=="exclude");
@@ -230,7 +296,7 @@ int main(int argc, char* argv[])
         water_colour=bgr_to_hex(img.at<Vec3b>(Point(0,0)));
     }
     //Not even starting if regions, subregions or continents are missing if appropriate flags are set
-    Mat reg,sub,cont;
+    Mat reg,sub,cou,emp,cont;
     if (flags[2])
     {
         reg=imread(path+"regions."+file_extension, IMREAD_COLOR);
@@ -247,6 +313,24 @@ int main(int argc, char* argv[])
         {
             cout<<"Error: Could not read the image `"+path+"subregions."+file_extension+"`!"<<endl;
             return 3;
+        }
+    }
+    if (flags[7])
+    {
+        cou=imread(path+"countries."+file_extension, IMREAD_COLOR);
+        if(cou.empty())
+        {
+            cout<<"Error: Could not read the image `"+path+"countries."+file_extension+"`!"<<endl;
+            return 7;
+        }
+    }
+    if (flags[8])
+    {
+        emp=imread(path+"empires."+file_extension, IMREAD_COLOR);
+        if(emp.empty())
+        {
+            cout<<"Error: Could not read the image `"+path+"empires."+file_extension+"`!"<<endl;
+            return 8;
         }
     }
     if (flags[4])
@@ -274,46 +358,36 @@ int main(int argc, char* argv[])
     //Getting basic information of the map (position and colour)
     Point pos;
     Point start=Point(0,0);
-    while (true)
+    Rect rect;
+    //vector<Point> positions=allNonZero(thresh);
+    int i=-1;
+    bool loop=true;
+    if (flags[6]) cout<<"Using "<<cores<<" cores..."<<endl;
+    while (loop)
     {
-        pos=firstNonZero(thresh,start);
-        if (pos.x<0 || pos.y<0)
+        vector<thread> pool;
+        for (int j=0;j<cores;j++)
         {
-            break;
+            ++i;
+            pos=firstNonZero(thresh,start);
+            if (pos.x<0 || pos.y<0)
+            {
+                loop=false;
+                break;
+            }
+            start=pos;
+            floodFill(thresh, pos, Scalar(j+1), &rect, Scalar(0), Scalar(0), 8);
+            pool.push_back(thread(get_province,i,img,pos,ref(provinces),thresh,j+1));
         }
-        start=pos;
-
-        provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos));
-
-        Mat range, shape, cropped;
-        vector<uchar> buff;
-
-        vector<int> param(2);
-        param[0]=IMWRITE_JPEG_QUALITY;
-        param[1]=89;
-        Rect box;
-        Rect rect;
-
-        //If province is not water get its shape
-        if (flags[1] || provinces[provinces.size()-1].colour!=water_colour)
+        for (auto& j : pool)
         {
-            floodFill(thresh, pos, Scalar(1), &rect, Scalar(0), Scalar(0), 8);
-
-            inRange(thresh, Scalar(1), Scalar(1), range);
-            dilate(range,shape,Mat());
-
-            box=boundingRect(shape);
-
-            cropped=shape(Range(box.y,box.y+box.height),Range(box.x,box.x+box.width));
-
-            imencode(".jpg", cropped, buff, param); //Compressing image in memory
-
-            provinces[provinces.size()-1].shape=buff;
-            provinces[provinces.size()-1].box=box;
+            j.join();
         }
-        floodFill(thresh, pos, Scalar(0), &rect, Scalar(0), Scalar(0), 8);
+        //get_province(img,positions[i],provinces,thresh);
+
         if (flags[6]) cout<<"\rProcessing provinces ("<<provinces.size()<<")";
     }
+    sort(provinces.begin(),provinces.end());
 
     thresh.release();
     img.release();
@@ -365,18 +439,33 @@ int main(int argc, char* argv[])
     }
     delete [] neighbours;
 
-    if (flags[6]) cout<<"Finding subregions, regions and continents..."<<endl;
+    if (flags[6] && (flags[2] || flags[3] || flags[4] || flags[7] || flags[8])) cout<<"Finding other map data (subregions, regions, continents...)"<<endl;
     //Finding regions, subregions and continents
     for (int i=0;i<SIZE;i++)
     {
         if (flags[2]) provinces[i].region=bgr_to_hex(reg.at<Vec3b>(provinces[i].pos));
         if (flags[3]) provinces[i].subregion=bgr_to_hex(sub.at<Vec3b>(provinces[i].pos));
+        if (flags[7]) provinces[i].country=bgr_to_hex(cou.at<Vec3b>(provinces[i].pos));
+        if (flags[8]) provinces[i].empire=bgr_to_hex(emp.at<Vec3b>(provinces[i].pos));
         if (flags[4]) provinces[i].continent=bgr_to_hex(cont.at<Vec3b>(provinces[i].pos));
     }
 
     if (flags[6]) cout<<"Writing results to map_data.txt..."<<endl;
     //Showing the results
     ofstream out("map_data.txt");
+    if (flags[9])
+    {
+        if (flags[5]) out<<"index ";
+        if (flags[0]) out<<"colour ";
+        out<<"position ";
+        out<<"box ";
+        if (flags[3]) out<<"subregion ";
+        if (flags[2]) out<<"region ";
+        if (flags[7]) out<<"country ";
+        if (flags[8]) out<<"empire ";
+        if (flags[4]) out<<"continent ";
+        out<<"neighbours\n";
+    }
     for (int i=0;i<SIZE;i++)
     {
         if (flags[5]) out<<i<<" ";
@@ -392,6 +481,7 @@ int main(int argc, char* argv[])
             }
         }
         out<<provinces[i].pos.x<<" "<<provinces[i].pos.y<<" ";
+        out<<provinces[i].box.x<<" "<<provinces[i].box.y<<" "<<provinces[i].box.height<<" "<<provinces[i].box.width<<" ";
         if (flags[3])
         {
             if (use==0) out<<provinces[i].subregion<<" ";
@@ -410,6 +500,28 @@ int main(int argc, char* argv[])
             {
                 int r,g,b;
                 char const *hexColor = provinces[i].region.c_str();
+                sscanf(hexColor, "#%02x%02x%02x", &r, &g, &b);
+                out<<r<<" "<<g<<" "<<b<<" ";
+            }
+        }
+        if (flags[7])
+        {
+            if (use==0) out<<provinces[i].country<<" ";
+            else
+            {
+                int r,g,b;
+                char const *hexColor = provinces[i].country.c_str();
+                sscanf(hexColor, "#%02x%02x%02x", &r, &g, &b);
+                out<<r<<" "<<g<<" "<<b<<" ";
+            }
+        }
+        if (flags[8])
+        {
+            if (use==0) out<<provinces[i].empire<<" ";
+            else
+            {
+                int r,g,b;
+                char const *hexColor = provinces[i].empire.c_str();
                 sscanf(hexColor, "#%02x%02x%02x", &r, &g, &b);
                 out<<r<<" "<<g<<" "<<b<<" ";
             }
