@@ -1,5 +1,5 @@
-# Map-Processor v1.1
-![asdf2](https://user-images.githubusercontent.com/125653767/235072268-edd0532a-edaf-4fe0-88b8-264ccf498edb.jpeg)
+# Map-Processor v1.2
+![asdf3](https://github.com/Shadow9876GitHub/Map-Processor/assets/125653767/976a248f-4901-4445-b51a-7efe23b0db09)
 >A console application that calculates province positions and their neighbours
 
 This is a simple console application that calculates provinces' positions, and their neighbours based on an appropriate input image.
@@ -11,7 +11,7 @@ Command.
 The application also includes automatic flags (in default_flags.txt) which can be changed for faster input.
 There are also two examples next to the program so feel free to experiment with those.
 
-Now it's working properly with bigger images such as 5000x3000 ones or even 12000x5000 sized images (though it takes a long time).
+Now it has "properly" implemented multiprocessing in it.
 
 ## Dependencies:
 - Opencv 4.6.0 - https://opencv.org/releases/
