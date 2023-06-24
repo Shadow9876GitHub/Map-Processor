@@ -6,4 +6,3 @@ subregions
 regions
 continents
 use-hex
-cores=6
