@@ -34,10 +34,12 @@ public:
     string empire;
     string continent;
     Rect box;
-    Province(string colour, Point pos)
+    Rect mini_box;
+    Province(string colour, Point pos, Rect mini_box)
     {
         this->colour=colour;
         this->pos=pos;
+        this->mini_box=mini_box;
     }
 };
 
@@ -307,15 +309,13 @@ int main(int argc, char* argv[])
         }
         start=pos;
 
-        provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos));
-
         Mat range, shape, cropped;
         vector<uchar> buff;
 
         vector<int> param(2);
         param[0]=IMWRITE_JPEG_QUALITY;
         param[1]=89;
-        Rect box;
+        Rect box,mini_box;
         Rect rect;
 
         //If province is not water get its shape
@@ -323,6 +323,11 @@ int main(int argc, char* argv[])
         floodFill(thresh, pos, Scalar(1), &rect, Scalar(0), Scalar(0), 8);
 
         inRange(thresh, Scalar(1), Scalar(1), range);
+
+        mini_box=boundingRect(range);
+
+        provinces.push_back(Province(bgr_to_hex(img.at<Vec3b>(pos)),pos,mini_box));
+
         dilate(range,shape,Mat());
 
         box=boundingRect(shape);
@@ -432,7 +437,7 @@ int main(int argc, char* argv[])
             }
         }
         out<<provinces[i].pos.x<<" "<<provinces[i].pos.y<<" ";
-        out<<provinces[i].box.x<<" "<<provinces[i].box.y<<" "<<provinces[i].box.height<<" "<<provinces[i].box.width<<" ";
+        out<<provinces[i].mini_box.x<<" "<<provinces[i].mini_box.y<<" "<<provinces[i].mini_box.width<<" "<<provinces[i].mini_box.height<<" ";
         if (flags[3])
         {
             if (use==0) out<<provinces[i].subregion<<" ";
