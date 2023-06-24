@@ -41,20 +41,23 @@ public:
     string empire;
     string continent;
     Rect box;
-    Province(int index, string colour, Point posm, Rect box)
+    Rect mini_box;
+    Province(int index, string colour, Point posm, Rect box, Rect mini_box)
     {
         this->index=index;
         this->colour=colour;
         this->pos=pos;
         this->box=box;
+        this->mini_box=mini_box;
     }
-    Province(int index, string colour, Point pos, vector<uchar> shape, Rect box)
+    Province(int index, string colour, Point pos, vector<uchar> shape, Rect box, Rect mini_box)
     {
         this->index=index;
         this->colour=colour;
         this->pos=pos;
         this->shape=shape;
         this->box=box;
+        this->mini_box=mini_box;
     }
     bool operator< (const Province &other) const {
         return index < other.index;
@@ -151,10 +154,13 @@ void get_province(int index, Mat img, Point pos, vector<Province> &provinces, Ma
     vector<int> param(2);
     param[0]=IMWRITE_JPEG_QUALITY;
     param[1]=89;
-    Rect box;
+    Rect box,mini_box;
     Rect rect;
 
     inRange(thresh, Scalar(thread_num), Scalar(thread_num), range);
+
+    mini_box=boundingRect(range);
+
     dilate(range,shape,Mat());
 
     box=boundingRect(shape);
@@ -166,13 +172,13 @@ void get_province(int index, Mat img, Point pos, vector<Province> &provinces, Ma
 
         imencode(".jpg", cropped, buff, param); //Compressing image in memory
         m.lock();
-        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,buff,box));
+        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,buff,box,mini_box));
         m.unlock();
     }
     else
     {
         m.lock();
-        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,box));
+        provinces.push_back(Province(index, bgr_to_hex(img.at<Vec3b>(pos)),pos,box,mini_box));
         m.unlock();
     }
     floodFill(thresh, pos, Scalar(0), &rect, Scalar(0), Scalar(0), 8);
@@ -481,7 +487,7 @@ int main(int argc, char* argv[])
             }
         }
         out<<provinces[i].pos.x<<" "<<provinces[i].pos.y<<" ";
-        out<<provinces[i].box.x<<" "<<provinces[i].box.y<<" "<<provinces[i].box.height<<" "<<provinces[i].box.width<<" ";
+        out<<provinces[i].mini_box.x<<" "<<provinces[i].mini_box.y<<" "<<provinces[i].mini_box.width<<" "<<provinces[i].mini_box.height<<" ";
         if (flags[3])
         {
             if (use==0) out<<provinces[i].subregion<<" ";
