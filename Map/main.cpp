@@ -42,7 +42,7 @@ public:
     string continent;
     Rect box;
     Rect mini_box;
-    Province(int index, string colour, Point posm, Rect box, Rect mini_box)
+    Province(int index, string colour, Point pos, Rect box, Rect mini_box)
     {
         this->index=index;
         this->colour=colour;
